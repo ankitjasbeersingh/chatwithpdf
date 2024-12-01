@@ -70,7 +70,7 @@ export default function Home() {
             </p>
           </div>
           <Button asChild className='mt-10'>
-            <Link href='/dashborad'>Get Started</Link>
+            <Link href='/dashboard'>Get Started</Link>
           </Button>
         </div>
         <div className='relative overflow-hidden pt-16'>

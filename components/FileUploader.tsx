@@ -22,7 +22,7 @@ function FileUploader() {
         }else{
 
         }
-    }, []);
+    }, [handleUpload]);
     const statusIcons :{
         [key in StatusText]:JSX.Element
     } = {
@@ -48,17 +48,17 @@ function FileUploader() {
                     className={`radial-progress bg-indigo-300 text-white border-indigo-600 border-4 ${progress === 100 && "hidden"}`}
                     role="progressbar"
                     style={{
-                        // @ts-ignore
+                        // @ts-expect-error : Should expect string
                         "--value":progress,
                         "--size":"12rem",
                         "--thickness":"1.3rem"
                     }}
                     >{progress} %</div>
                     {
-                        // @ts-ignore
+                        // @ts-expect-error: Should expect string
                         statusIcons[status!]
                     }
-                    {/* @ts-ignore */}
+                    {/* @ts-expect-error : Should expect string */}
                     <p className="text-indigo-600 animate-pulse">{status}</p>
                 </div>
             )}

@@ -8,9 +8,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     const jsonResponse = await handleUpload({
       body,
       request,
-      onBeforeGenerateToken: async (
-        pathname
-      ) => {
+      onBeforeGenerateToken: async () => {
         return {
           tokenPayload: JSON.stringify({
           }),

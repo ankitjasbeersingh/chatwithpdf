@@ -1,16 +1,16 @@
-import { ChatOpenAI } from "@langchain/openai";
+// import { ChatOpenAI } from "@langchain/openai";
 import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf";
 import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
-import { OpenAIEmbeddings } from "@langchain/openai";
+// import { OpenAIEmbeddings } from "@langchain/openai";
 import { ChatMistralAI, MistralAIEmbeddings } from "@langchain/mistralai";
 import { createStuffDocumentsChain } from "langchain/chains/combine_documents";
 import { ChatPromptTemplate } from "@langchain/core/prompts";
 import { createRetrievalChain } from "langchain/chains/retrieval";
-import {createHistoryAwareRetriever} from "langchain/chains/history_aware_retriever";
+import { createHistoryAwareRetriever } from "langchain/chains/history_aware_retriever";
 import { HumanMessage, AIMessage } from "@langchain/core/messages";
 import pineconeClient from "./pinecone";
-import {PineconeStore} from "@langchain/pinecone";
-import { PineconeConflictError } from "@pinecone-database/pinecone/dist/errors";
+import { PineconeStore } from "@langchain/pinecone";
+// import { PineconeConflictError } from "@pinecone-database/pinecone/dist/errors";
 import { Index, RecordMetadata } from "@pinecone-database/pinecone";
 import { adminDb } from "@/firebaseAdmin";
 import { auth } from "@clerk/nextjs/server";
@@ -23,23 +23,51 @@ import { auth } from "@clerk/nextjs/server";
 const model = new ChatMistralAI({
     model: "mistral-large-latest",
     temperature: 0
-  });
-
-export async function generateDocs(docId:string){
+});
+export const indexName = "chatwithpdfmistral";
+async function fetchMessagesFromDB(docId: string) {
     const { userId } = await auth();
-
     if(!userId){
-        throw new Error("User not founds");
+        throw new Error("User not found");
     }
-    const firebaseRef = await adminDb.collection("users")
+
+    console.log("--- Fetching chat history from the firestore database... ---");
+    // Get the last 6 messages from the chat history
+    const chats = await adminDb
+    .collection("users")
     .doc(userId)
     .collection("files")
     .doc(docId)
+    .collection("chat")
+    .orderBy("createdAt","desc")
+    //.limit(LIMIT)
     .get();
+
+    const chatHistory = chats.docs.map((doc) => {
+        return doc.data().role === "human"
+        ? new HumanMessage(doc.data().message)
+        : new AIMessage(doc.data().message);
+    });
+
+    console.log(`--- fetched last ${chatHistory.length} messages succcessfully`);
+    console.log(chatHistory.map((msg)=> msg.content.toString()))
+    return chatHistory;
+}
+export async function generateDocs(docId: string) {
+    const { userId } = await auth();
+
+    if (!userId) {
+        throw new Error("User not founds");
+    }
+    const firebaseRef = await adminDb.collection("users")
+        .doc(userId)
+        .collection("files")
+        .doc(docId)
+        .get();
 
     const downloadUrl = firebaseRef.data()?.downloadUrl;
 
-    if(!downloadUrl){
+    if (!downloadUrl) {
         throw new Error("Download URL not found");
     }
 
@@ -52,7 +80,7 @@ export async function generateDocs(docId:string){
     console.log("--- Loading PDF document");
     const loader = new PDFLoader(data);
     const docs = await loader.load();
-    
+
     // Split the loaded document into smaller parts for easier processing
     console.log("--- Splitting the document into smaller parts... ---");
     const splitter = new RecursiveCharacterTextSplitter();
@@ -62,40 +90,33 @@ export async function generateDocs(docId:string){
     return splitDocs;
 }
 
-export const indexName = "chatwithpdfmistral";
 
-async function namespaceExists(index: Index<RecordMetadata>, namespace:string){
-    if(namespace === null) throw new Error("No namespace value provided.");
+
+async function namespaceExists(index: Index<RecordMetadata>, namespace: string) {
+    if (namespace === null) throw new Error("No namespace value provided.");
     const { namespaces } = await index.describeIndexStats();
     return namespaces?.[namespace] !== undefined;
 }
 
-export async function generateEmbeddingsInPineconeVectorStore(docId:string){
-    
-    const {userId} = await auth();
-    
-    if(!userId){
+export async function generateEmbeddingsInPineconeVectorStore(docId: string) {
+
+    const { userId } = await auth();
+
+    if (!userId) {
         throw new Error('User not found');
     }
     let pineconeVectorStore;
 
     console.log("--- Generating embeddings for split documents---");
-    // const embeddings = new OpenAIEmbeddings(
-    //     {
-    //         apiKey: process.env.OPENAI_API_KEY, // In Node.js defaults to process.env.OPENAI_API_KEY
-    //         batchSize: 512, // Default value if omitted is 512. Max is 2048
-    //         model: "text-embedding-3-large",
-    //     }
-    // );
 
     const embeddings = new MistralAIEmbeddings({
         model: "mistral-embed"
-      });
+    });
 
     const index = await pineconeClient.index(indexName);
     const namespaceAlreadyExists = await namespaceExists(index, docId);
 
-    if(namespaceAlreadyExists){
+    if (namespaceAlreadyExists) {
         console.log(
             `--- Namespae ${docId} already exists, reusing existing embeddings... ---`
         )
@@ -118,8 +139,77 @@ export async function generateEmbeddingsInPineconeVectorStore(docId:string){
                 namespace: docId,
             }
         );
-        
+
+    }
+}
+
+const generateLangchainCompletion = async (docId: string, question: string) => {
+    
+    const pineconeVectorStore = await generateEmbeddingsInPineconeVectorStore(docId);
+
+    if (!pineconeVectorStore) {
+        throw new Error("Pinecone vector store not found");
     }
 
-     
-}
+    // create a retriever to search through the vector store
+    console.log("--- Creating a retriever... ---");
+    const retriever = pineconeVectorStore.asRetriever();
+
+    //Fetch the chat history from the database
+    const chatHistory = await fetchMessagesFromDB(docId);
+
+    // Define a prompt template for generating search queries based on conversation history
+    console.log("--- Defining a prompt template... ---");
+    const historyAwarePrompt = ChatPromptTemplate.fromMessages([
+        ...chatHistory,
+        ["user","{input}"],
+        [
+            "user",
+            "Given the above conversation, generate a search query to look up in order to get information relevant to the conversation"
+        ],
+    ]);
+
+    // Create a history-aware retriever chain that uses the model, retriever. and prompt
+    console.log("--- Creating a history-aware retriever chain... ---");
+    const historyAwareRetrieverChain = await createHistoryAwareRetriever({
+        llm:model,
+        retriever,
+        rephrasePrompt: historyAwarePrompt,
+    });
+
+    // Define a prompt template for answering questions based on retrieved context
+    console.log("--- Defining a prompt template for answering questions... ---");
+    const historyAwareRetrievalPrompt = ChatPromptTemplate.fromMessages([
+        [
+            "system",
+            "Answer the user's questions based on the below context:\n\n{context}",
+        ],
+        ...chatHistory,
+        ["user","{input}"]
+    ]);
+
+    // Create a chain to cobine the retrieved documents into a coherent response
+    console.log("--- Creating a document combining chain... ---");
+    const historyAwareCombineDocsChain =  await createStuffDocumentsChain({
+        llm:model,
+        prompt:historyAwareRetrievalPrompt
+    });
+
+    // Create the main retrieval chain that combines the history-aware retriever and document combining chains
+    console.log(" --- Creating the main retrieval chain... ---");
+    const conversationalRetrievalChain = await createRetrievalChain({
+        retriever: historyAwareRetrieverChain,
+        combineDocsChain:historyAwareCombineDocsChain
+    });
+
+    console.log("--- Running the chain with a sample conversation... ---");
+    const reply = await conversationalRetrievalChain.invoke({
+        chat_history:chatHistory,
+        input: question,
+    });
+    // Print the result to the console
+    console.log(reply.answer);
+    return reply.answer;
+};
+
+export {model, generateLangchainCompletion};

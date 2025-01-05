@@ -1,12 +1,28 @@
 "use client";
 import { Button } from "@/components/ui/button"
+import useSubscription from "@/hooks/useSubscription";
 import { useUser } from "@clerk/nextjs";
 import { CheckIcon } from "lucide-react"
-import { useRouter } from "next/navigation";
-
+import { useTransition } from "react";
+// import { useRouter } from "next/navigation";
+export type UserDetails = {
+    email:string;
+    name:string;
+}
 function PricingPage() {
     const { user } = useUser();
-    const router = useRouter();
+    // const router = useRouter();
+    const {hasActiveMembership, loading} = useSubscription();
+    const [isPending, startTransition] = useTransition();
+
+    const handleUpgrade = () =>{
+        if(!user) return;
+
+        // const userDetails:UserDetails = {
+        //     email: user.primaryEmailAddress?.toString()!,
+        //     name:user.fullName!,
+        // }
+    }
     return (
         <div>
             <div className="bg-whitepy-24 sm:py-32">
@@ -41,6 +57,10 @@ function PricingPage() {
                                 <CheckIcon className="h-6! w-5! flex-none text-indigo-600" />
                                 Try out the AI Chat Functionality
                             </li>
+                            <li className="flex gap-x-3">
+                                <CheckIcon className="h-6! w-5! flex-none text-indigo-600" />
+                                File size limit upto 2 MB
+                            </li>
                         </ul>
                     </div>
                     <div className="ring-2 ring-indigo-600 rounded-3xl p-8">
@@ -52,7 +72,7 @@ function PricingPage() {
                             <span className="text-4xl font-bold tracking-tight text-gray-900">$5.99</span>
                             <span className="text-sm font-semibold leading-6 text-gray-600">/ month</span>
                         </p>
-                        <Button className="bg-indigo-600 w-full text-white shadow-sm hover:bg-indigo-500 mt-6 block rounded-md px-3 py-2 text-center text-sm font-sem leading-6 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">Upgrade to Pro</Button>
+                        <Button disabled={loading || isPending} onClick={handleUpgrade} className="bg-indigo-600 w-full text-white shadow-sm hover:bg-indigo-500 mt-6 block rounded-md px-3 py-2 text-center text-sm font-sem leading-6 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">{isPending || loading ? "Loading...": hasActiveMembership ? "Manage Plan":"Upgrade to Pro"}</Button>
                         <ul role="list" className="mt-8 space-y-3 text-sm leading-6 text-gray-600">
                             <li className="flex gap-x-3">
                                 <CheckIcon className="h-6! w-5! flex-none text-indigo-600" />
@@ -69,6 +89,10 @@ function PricingPage() {
                             <li className="flex gap-x-3">
                                 <CheckIcon className="h-6! w-5! flex-none text-indigo-600" />
                                 Full Power AI Chat Functionality with Memory Recall
+                            </li>
+                            <li className="flex gap-x-3">
+                                <CheckIcon className="h-6! w-5! flex-none text-indigo-600" />
+                                No limit on file size
                             </li>
                         </ul>
                     </div>

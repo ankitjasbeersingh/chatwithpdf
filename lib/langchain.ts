@@ -15,11 +15,6 @@ import { Index, RecordMetadata } from "@pinecone-database/pinecone";
 import { adminDb } from "@/firebaseAdmin";
 import { auth } from "@clerk/nextjs/server";
 
-// const model = new ChatOpenAI({
-//     apiKey: process.env.OPENAI_API_KEY,
-//     modelName: "gpt-4o"
-// });
-
 const model = new ChatMistralAI({
     model: "mistral-large-latest",
     temperature: 0
